@@ -1,6 +1,12 @@
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { getMediaKeys } = require('@whiskeysockets/baileys/lib/Utils/messages-media');
 const fs = require('fs');
 const path = require('path');
+const Crypto = require('crypto');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+
+// Configurar o caminho do FFmpeg
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 class WhatsAppDecryptor {
   constructor() {
@@ -17,69 +23,134 @@ class WhatsAppDecryptor {
 
   /**
    * Descriptografa uma imagem do WhatsApp
-   * @param {string} filePath - Caminho do arquivo criptografado
-   * @param {Object} messageInfo - Informações da mensagem (opcional)
-   * @returns {Promise<Object>} - Resultado da descriptografia
    */
   async decryptImage(filePath, messageInfo = {}) {
     try {
-      console.log('Iniciando descriptografia do arquivo:', filePath);
-      
-      // Verificar se o arquivo existe
-      if (!fs.existsSync(filePath)) {
-        throw new Error('Arquivo não encontrado');
+      const { mediaKey, mimetype } = messageInfo;
+      if (!mediaKey || !mimetype) {
+        throw new Error('Media key and mimetype are required for decryption.');
       }
 
-      // Ler o arquivo
-      const fileBuffer = fs.readFileSync(filePath);
-      
-      // Simular uma mensagem do WhatsApp (você pode ajustar conforme necessário)
-      const mockMessage = {
-        message: {
-          imageMessage: {
-            url: filePath,
-            mimetype: 'image/jpeg',
-            fileLength: fileBuffer.length,
-            ...messageInfo
-          }
-        }
-      };
+      console.log(`\n--- Iniciando descriptografia ---`);
+      console.log('Arquivo para processar:', filePath);
+      console.log('Mimetype:', mimetype);
 
-      // Tentar descriptografar usando Baileys
-      let decryptedBuffer;
-      try {
-        decryptedBuffer = await downloadMediaMessage(mockMessage, 'buffer', {}, {
-          logger: console,
-          reuploadRequest: () => Promise.resolve()
-        });
-      } catch (error) {
-        console.log('Erro na descriptografia com Baileys, tentando método alternativo:', error.message);
-        // Se falhar, tentar descriptografia manual
-        decryptedBuffer = await this.decryptManually(fileBuffer, messageInfo);
+      const mediaType = mimetype.split('/')[0];
+      const encryptedBuffer = fs.readFileSync(filePath);
+      const mediaKeyBuffer = Buffer.from(mediaKey, 'base64');
+
+      // 1. Derivar chaves
+      const { iv, cipherKey, macKey } = await getMediaKeys(mediaKeyBuffer, mediaType);
+      console.log('Chaves de mídia derivadas com sucesso.');
+
+      // 2. Validar MAC
+      const file = encryptedBuffer.slice(0, -10);
+      const mac = encryptedBuffer.slice(-10);
+
+      const hmac = Crypto.createHmac('sha256', macKey).update(iv);
+      hmac.update(file);
+      const digest = hmac.digest();
+
+      if (!mac.equals(digest.slice(0, 10))) {
+        throw new Error('Falha na verificação do MAC: a mídia pode estar corrompida ou a chave está incorreta.');
       }
+      console.log('Verificação do MAC bem-sucedida.');
 
-      // Salvar arquivo descriptografado
-      const fileName = path.basename(filePath);
-      const decryptedFileName = `decrypted-${Date.now()}-${fileName}`;
+      // 3. Descriptografar
+      const decipher = Crypto.createDecipheriv('aes-256-cbc', cipherKey, iv);
+      const decryptedBuffer = Buffer.concat([decipher.update(file), decipher.final()]);
+      console.log('Arquivo descriptografado com sucesso.');
+
+      // 4. Determinar extensão baseada no mimetype
+      const extension = this.getExtensionFromMimeType(mimetype);
+      
+      // 5. Salvar arquivo descriptografado com extensão correta
+      const timestamp = Date.now();
+      const decryptedFileName = `decrypted-${timestamp}.${extension}`;
       const decryptedPath = path.join(this.decryptedDir, decryptedFileName);
       
       fs.writeFileSync(decryptedPath, decryptedBuffer);
       
       console.log('Arquivo descriptografado salvo em:', decryptedPath);
       
+      // 6. Se for áudio, converter para MP3
+      let finalFileName = decryptedFileName;
+      let finalPath = decryptedPath;
+      let finalMimeType = mimetype;
+      
+      if (mimetype.startsWith('audio/')) {
+        try {
+          console.log('Convertendo áudio para MP3...');
+          const mp3FileName = `decrypted-${timestamp}.mp3`;
+          const mp3Path = path.join(this.decryptedDir, mp3FileName);
+          
+          await this.convertToMp3(decryptedPath, mp3Path);
+          
+          // Remover arquivo original e usar o MP3
+          fs.unlinkSync(decryptedPath);
+          
+          finalFileName = mp3FileName;
+          finalPath = mp3Path;
+          finalMimeType = 'audio/mp3';
+          
+          console.log('Áudio convertido para MP3:', mp3Path);
+        } catch (error) {
+          console.error('Erro na conversão para MP3, mantendo arquivo original:', error.message);
+        }
+      }
+      
       return {
         success: true,
         originalFile: filePath,
-        decryptedFile: decryptedPath,
-        fileName: decryptedFileName,
-        size: decryptedBuffer.length,
-        mimetype: this.detectMimeType(decryptedBuffer)
+        decryptedFile: finalPath,
+        fileName: finalFileName,
+        size: fs.statSync(finalPath).size,
+        mimetype: finalMimeType
       };
 
     } catch (error) {
-      console.error('Erro na descriptografia:', error);
-      throw error;
+      console.error('Erro durante a descriptografia:', error);
+      // Adicionar mais detalhes ao erro
+      const enhancedError = new Error(`Falha na descriptografia: ${error.message}`);
+      enhancedError.stack = error.stack;
+      enhancedError.originalError = error;
+      throw enhancedError;
     }
+  }
+
+  /**
+   * Obtém a extensão do arquivo baseada no mimetype
+   * @param {string} mimetype - Tipo MIME
+   * @returns {string} - Extensão do arquivo
+   */
+  getExtensionFromMimeType(mimetype) {
+    // Limpar o mimetype removendo codecs e parâmetros extras
+    const cleanMimeType = mimetype.split(';')[0].toLowerCase().trim();
+    
+    const mimeToExtension = {
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'image/bmp': 'bmp',
+      'image/tiff': 'tiff',
+      'video/mp4': 'mp4',
+      'video/avi': 'avi',
+      'video/mov': 'mov',
+      'video/wmv': 'wmv',
+      'audio/mp3': 'mp3',
+      'audio/wav': 'wav',
+      'audio/ogg': 'ogg',
+      'audio/m4a': 'm4a',
+      'audio/aac': 'aac',
+      'audio/flac': 'flac',
+      'audio/webm': 'webm',
+      'application/pdf': 'pdf',
+      'text/plain': 'txt'
+    };
+    
+    return mimeToExtension[cleanMimeType] || 'bin';
   }
 
   /**
@@ -175,6 +246,30 @@ class WhatsAppDecryptor {
     };
 
     return await this.decryptImage(filePath, messageInfo);
+  }
+
+  /**
+   * Converte áudio para MP3
+   * @param {string} inputPath - Caminho do arquivo de entrada
+   * @param {string} outputPath - Caminho do arquivo de saída
+   * @returns {Promise<string>} - Caminho do arquivo convertido
+   */
+  async convertToMp3(inputPath, outputPath) {
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .toFormat('mp3')
+        .audioCodec('libmp3lame')
+        .audioBitrate(128)
+        .on('end', () => {
+          console.log('Conversão para MP3 concluída');
+          resolve(outputPath);
+        })
+        .on('error', (err) => {
+          console.error('Erro na conversão para MP3:', err);
+          reject(err);
+        })
+        .save(outputPath);
+    });
   }
 }
 

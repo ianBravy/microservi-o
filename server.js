@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const WhatsAppDecryptor = require('./whatsapp-decrypt');
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,9 +11,9 @@ const PORT = process.env.PORT || 3000;
 // Inicializar o descriptografador
 const decryptor = new WhatsAppDecryptor();
 
-// Middleware para processar JSON e dados de formulário
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Middleware para processar JSON e dados de formulário (com limite de tamanho aumentado)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Configuração do Multer para upload de arquivos
 const storage = multer.diskStorage({
@@ -40,8 +41,11 @@ app.get('/', (req, res) => {
   res.json({
     message: 'WhatsApp Media Service - Serviço de descriptografia de imagens',
     endpoints: {
-      decrypt: 'POST /decrypt-image',
-      health: 'GET /health'
+      decrypt: 'POST /decrypt-image-from-url',
+      health: 'GET /health',
+      ping: 'GET /ping',
+      files: 'GET /files',
+      download: 'GET /download/:filename'
     }
   });
 });
@@ -51,58 +55,58 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Rota para descriptografar imagem
-app.post('/decrypt-image', upload.single('image'), async (req, res) => {
+// Rota de teste de conectividade PING
+app.get('/ping', (req, res) => {
+  console.log(`\n✅ --- PING Received! Connection is OK! --- ✅`);
+  res.status(200).json({ message: 'pong', timestamp: new Date().toISOString() });
+});
+
+// Endpoint para descriptografar a partir de uma URL
+app.post('/decrypt-image-from-url', async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ 
-        error: 'Nenhuma imagem foi enviada',
-        message: 'Envie uma imagem usando o campo "image"'
+    const { url, mediaKey, mimetype } = req.body;
+
+    if (!url || !mediaKey || !mimetype) {
+      return res.status(400).json({
+        error: 'URL, mediaKey, and mimetype are required.',
       });
     }
 
-    const uploadedFile = req.file;
-    console.log('Arquivo recebido:', uploadedFile.originalname);
+    // 1. Baixar o arquivo criptografado
+    const response = await axios.get(url, { responseType: 'arraybuffer' });
+    const encryptedBuffer = Buffer.from(response.data, 'binary');
 
-    // Informações do WhatsApp (opcional - pode vir do frontend)
-    const whatsappInfo = {
-      messageId: req.body.messageId,
-      chatId: req.body.chatId,
-      senderId: req.body.senderId,
-      timestamp: req.body.timestamp,
-      encryptionType: req.body.encryptionType,
-      mediaKey: req.body.mediaKey,
-      // Outras informações específicas do WhatsApp
-    };
+    // 2. Salvar o arquivo temporariamente
+    const tempDir = 'uploads';
+    const tempFilename = `${Date.now()}-from-url.enc`;
+    const tempFilepath = path.join(tempDir, tempFilename);
+    fs.writeFileSync(tempFilepath, encryptedBuffer);
 
-    // Descriptografar a imagem
-    const result = await decryptor.processWhatsAppFile(uploadedFile.path, whatsappInfo);
-
-    // Retornar resultado
-    res.json({
-      success: true,
-      message: 'Imagem descriptografada com sucesso',
-      originalName: uploadedFile.originalname,
-      originalSize: uploadedFile.size,
-      decryptedFileName: result.fileName,
-      decryptedSize: result.size,
-      mimetype: result.mimetype,
-      decryptedImageUrl: `/download/${result.fileName}`,
-      originalFileUrl: `/download/${uploadedFile.filename}`,
-      timestamp: new Date().toISOString()
+    // 3. Descriptografar
+    const result = await decryptor.decryptImage(tempFilepath, {
+      mediaKey,
+      mimetype,
     });
 
+    if (result.success) {
+      res.status(200).json({
+        message: 'Image decrypted successfully!',
+        ...result,
+      });
+    } else {
+      throw new Error(result.error);
+    }
   } catch (error) {
-    console.error('Erro ao processar imagem:', error);
-    res.status(500).json({ 
-      error: 'Erro ao descriptografar imagem',
+    console.error('--- ERROR during /decrypt-image-from-url ---');
+    console.error('Error Message:', error.message);
+    res.status(500).json({
+      error: 'Failed to decrypt image from URL.',
       message: error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
 
-// Rota para download da imagem processada (atualizada)
+// Rota para download da imagem processada
 app.get('/download/:filename', (req, res) => {
   const filename = req.params.filename;
   
@@ -142,7 +146,7 @@ app.get('/download/:filename', (req, res) => {
   }
 });
 
-// Nova rota para listar arquivos processados
+// Rota para listar arquivos processados
 app.get('/files', (req, res) => {
   try {
     const uploadsDir = path.join(__dirname, 'uploads');
@@ -177,17 +181,9 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Middleware para rotas não encontradas
-app.use('*', (req, res) => {
-  res.status(404).json({ 
-    error: 'Rota não encontrada',
-    availableRoutes: ['GET /', 'GET /health', 'POST /decrypt-image', 'GET /download/:filename', 'GET /files']
-  });
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`📱 WhatsApp Media Service iniciado`);
-  console.log(`🌐 URL base: http://localhost:${PORT}`);
-  console.log(`📤 Endpoint para descriptografia: http://localhost:${PORT}/decrypt-image`);
+// Iniciar o servidor
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`✅ Endpoint principal: POST /decrypt-image-from-url`);
+  console.log('Aguardando requisições...');
 }); 

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📱 WhatsApp Media Decryptor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #25D366;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        input[type="file"], input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #25D366;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #128C7E;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .image-preview {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .image-preview img {
+            max-width: 300px;
+            max-height: 300px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+        }
+        .endpoints {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .endpoints h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .endpoint {
+            margin: 5px 0;
+            font-family: monospace;
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 WhatsApp Media Decryptor</h1>
+        
+        <div class="endpoints">
+            <h3>🌐 Endpoints Disponíveis:</h3>
+            <div class="endpoint">GET / - Informações do serviço</div>
+            <div class="endpoint">GET /health - Status do servidor</div>
+            <div class="endpoint">POST /decrypt-image - Descriptografar imagem</div>
+            <div class="endpoint">GET /files - Listar arquivos</div>
+            <div class="endpoint">GET /download/:filename - Download</div>
+        </div>
+
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="imageInput">📷 Selecione a imagem criptografada:</label>
+                <input type="file" id="imageInput" accept="image/*" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="messageId">💬 Message ID (opcional):</label>
+                <input type="text" id="messageId" placeholder="ID da mensagem do WhatsApp">
+            </div>
+            
+            <div class="form-group">
+                <label for="chatId">👥 Chat ID (opcional):</label>
+                <input type="text" id="chatId" placeholder="ID do chat">
+            </div>
+            
+            <div class="form-group">
+                <label for="senderId">👤 Sender ID (opcional):</label>
+                <input type="text" id="senderId" placeholder="ID do remetente">
+            </div>
+            
+            <button type="submit" id="submitBtn">🔓 Descriptografar Imagem</button>
+        </form>
+        
+        <div id="result"></div>
+        <div id="imageContainer" class="image-preview"></div>
+        
+        <div style="margin-top: 30px; text-align: center;">
+            <button onclick="testHealth()" style="width: auto; margin: 5px;">🏥 Testar Health Check</button>
+            <button onclick="listFiles()" style="width: auto; margin: 5px;">📁 Listar Arquivos</button>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000';
+        
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const file = document.getElementById('imageInput').files[0];
+            const messageId = document.getElementById('messageId').value;
+            const chatId = document.getElementById('chatId').value;
+            const senderId = document.getElementById('senderId').value;
+            const submitBtn = document.getElementById('submitBtn');
+            
+            if (!file) {
+                showResult('❌ Erro: Selecione uma imagem!', 'error');
+                return;
+            }
+            
+            // Desabilitar botão e mostrar loading
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ Processando...';
+            showResult('⏳ Enviando imagem para descriptografia...', 'info');
+            
+            const formData = new FormData();
+            formData.append('image', file);
+            if (messageId) formData.append('messageId', messageId);
+            if (chatId) formData.append('chatId', chatId);
+            if (senderId) formData.append('senderId', senderId);
+            
+            try {
+                const response = await fetch(`${API_BASE}/decrypt-image`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showResult(`
+                        <h3>✅ Sucesso!</h3>
+                        <p><strong>Arquivo original:</strong> ${result.originalName}</p>
+                        <p><strong>Arquivo descriptografado:</strong> ${result.decryptedFileName}</p>
+                        <p><strong>Tamanho original:</strong> ${formatBytes(result.originalSize)}</p>
+                        <p><strong>Tamanho descriptografado:</strong> ${formatBytes(result.decryptedSize)}</p>
+                        <p><strong>Tipo:</strong> ${result.mimetype}</p>
+                        <p><strong>Timestamp:</strong> ${new Date(result.timestamp).toLocaleString()}</p>
+                    `, 'success');
+                    
+                    // Mostrar imagem descriptografada
+                    showImage(`${API_BASE}${result.decryptedImageUrl}`);
+                } else {
+                    showResult(`
+                        <h3>❌ Erro!</h3>
+                        <p><strong>Erro:</strong> ${result.error}</p>
+                        <p><strong>Mensagem:</strong> ${result.message}</p>
+                    `, 'error');
+                }
+            } catch (error) {
+                showResult(`
+                    <h3>❌ Erro de Conexão!</h3>
+                    <p><strong>Erro:</strong> ${error.message}</p>
+                    <p>Verifique se o servidor está rodando em ${API_BASE}</p>
+                `, 'error');
+            } finally {
+                // Reabilitar botão
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🔓 Descriptografar Imagem';
+            }
+        });
+        
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `<div class="result ${type}">${message}</div>`;
+        }
+        
+        function showImage(src) {
+            const container = document.getElementById('imageContainer');
+            container.innerHTML = `
+                <h3>🖼️ Imagem Descriptografada:</h3>
+                <img src="${src}" alt="Imagem descriptografada" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <p style="display:none; color: #666;">Imagem não pode ser exibida. Use o link de download.</p>
+                <p><a href="${src}" target="_blank" style="color: #007bff;">📥 Download da imagem</a></p>
+            `;
+        }
+        
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        async function testHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const result = await response.json();
+                showResult(`
+                    <h3>🏥 Health Check</h3>
+                    <p><strong>Status:</strong> ${result.status}</p>
+                    <p><strong>Timestamp:</strong> ${new Date(result.timestamp).toLocaleString()}</p>
+                `, 'success');
+            } catch (error) {
+                showResult(`
+                    <h3>❌ Erro no Health Check</h3>
+                    <p>${error.message}</p>
+                `, 'error');
+            }
+        }
+        
+        async function listFiles() {
+            try {
+                const response = await fetch(`${API_BASE}/files`);
+                const result = await response.json();
+                
+                let filesHtml = '<h3>📁 Arquivos Processados</h3>';
+                
+                if (result.uploads.length > 0) {
+                    filesHtml += '<h4>📤 Arquivos Originais:</h4><ul>';
+                    result.uploads.forEach(file => {
+                        filesHtml += `<li>${file.name} - <a href="${API_BASE}${file.url}" target="_blank">Download</a></li>`;
+                    });
+                    filesHtml += '</ul>';
+                }
+                
+                if (result.decrypted.length > 0) {
+                    filesHtml += '<h4>🔓 Arquivos Descriptografados:</h4><ul>';
+                    result.decrypted.forEach(file => {
+                        filesHtml += `<li>${file.name} - <a href="${API_BASE}${file.url}" target="_blank">Download</a></li>`;
+                    });
+                    filesHtml += '</ul>';
+                }
+                
+                if (result.uploads.length === 0 && result.decrypted.length === 0) {
+                    filesHtml += '<p>Nenhum arquivo processado ainda.</p>';
+                }
+                
+                showResult(filesHtml, 'info');
+            } catch (error) {
+                showResult(`
+                    <h3>❌ Erro ao listar arquivos</h3>
+                    <p>${error.message}</p>
+                `, 'error');
+            }
+        }
+        
+        // Testar conexão ao carregar a página
+        window.addEventListener('load', () => {
+            testHealth();
+        });
+    </script>
+</body>
+</html> 

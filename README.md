@@ -1,14 +1,35 @@
 # 📱 WhatsApp Media Service
 
-Serviço para descriptografar imagens do WhatsApp usando a biblioteca Baileys.
+Serviço para descriptografar mídias do WhatsApp (imagens, áudios, vídeos) e convertê-las para formatos padrão.
 
 ## 🚀 Funcionalidades
 
-- ✅ Upload de imagens criptografadas do WhatsApp
-- 🔓 Descriptografia automática usando Baileys
-- 📁 Gerenciamento de arquivos (upload e download)
-- 🌐 API REST completa
-- 📊 Health check e monitoramento
+- ✅ **Imagens:** JPEG, PNG, GIF, WebP
+- ✅ **Áudios:** Conversão automática para MP3
+- ✅ **Vídeos:** MP4, AVI, MOV
+- ✅ **Documentos:** PDF, TXT
+
+## 🚀 Deploy na Vercel
+
+### 1. Instalar Vercel CLI
+```bash
+npm i -g vercel
+```
+
+### 2. Fazer login na Vercel
+```bash
+vercel login
+```
+
+### 3. Deploy do projeto
+```bash
+vercel
+```
+
+### 4. Para produção
+```bash
+vercel --prod
+```
 
 ## 📋 Pré-requisitos
 
@@ -46,6 +67,46 @@ O servidor estará rodando em `http://localhost:3000`
 | `POST` | `/decrypt-image` | Descriptografar imagem |
 | `GET` | `/download/:filename` | Download de arquivo |
 | `GET` | `/files` | Listar arquivos processados |
+
+## 🎵 Funcionalidades
+
+- ✅ **Imagens:** JPEG, PNG, GIF, WebP
+- ✅ **Áudios:** Conversão automática para MP3
+- ✅ **Vídeos:** MP4, AVI, MOV
+- ✅ **Documentos:** PDF, TXT
+
+## 🔧 Tecnologias
+
+- Node.js
+- Express.js
+- FFmpeg (conversão de áudio)
+- Baileys (criptografia WhatsApp)
+
+## 📝 Notas
+
+- Arquivos temporários são limpos automaticamente
+- Áudios são convertidos automaticamente para MP3
+- Imagens mantêm formato original
+- Suporte a todos os tipos de mídia do WhatsApp
+
+## 🌐 URL de Produção
+
+Após o deploy, sua URL será algo como:
+```
+https://seu-projeto.vercel.app
+```
+
+## 🔗 Exemplo de Uso
+
+```bash
+curl -X POST https://seu-projeto.vercel.app/decrypt-image-from-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "URL_DA_MIDIA",
+    "mediaKey": "CHAVE_DE_MIDIA",
+    "mimetype": "image/jpeg"
+  }'
+```
 
 ## 🔧 Como Usar
 

@@ -182,8 +182,11 @@ app.use((err, req, res, next) => {
 });
 
 // Iniciar o servidor
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
   console.log(`\n🚀 Servidor rodando na porta ${PORT}`);
   console.log(`✅ Endpoint principal: POST /decrypt-image-from-url`);
   console.log('Aguardando requisições...');
-}); 
+});
+
+// Exportar para Vercel
+module.exports = app; 

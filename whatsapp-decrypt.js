@@ -10,8 +10,11 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 class WhatsAppDecryptor {
   constructor() {
-    this.uploadDir = './uploads';
-    this.decryptedDir = './decrypted';
+    const isVercel = !!process.env.VERCEL;
+    const baseDir = isVercel ? '/tmp/wa-media-service' : process.cwd();
+
+    this.uploadDir = path.join(baseDir, 'uploads');
+    this.decryptedDir = path.join(baseDir, 'decrypted');
     
     // Criar diretórios se não existirem
     [this.uploadDir, this.decryptedDir].forEach(dir => {

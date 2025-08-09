@@ -16,5 +16,6 @@
     "server.js": {
       "maxDuration": 30
     }
-  }
+  },
+  "regions": ["gru1"]
 } 

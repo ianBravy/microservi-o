@@ -18,7 +18,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // Configuração do Multer para upload de arquivos
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = './uploads';
+    const uploadDir = decryptor.uploadDir;
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -77,7 +77,7 @@ app.post('/decrypt-image-from-url', async (req, res) => {
     const encryptedBuffer = Buffer.from(response.data, 'binary');
 
     // 2. Salvar o arquivo temporariamente
-    const tempDir = 'uploads';
+    const tempDir = decryptor.uploadDir;
     const tempFilename = `${Date.now()}-from-url.enc`;
     const tempFilepath = path.join(tempDir, tempFilename);
     fs.writeFileSync(tempFilepath, encryptedBuffer);
@@ -112,8 +112,8 @@ app.get('/download/:filename', (req, res) => {
   
   // Tentar encontrar o arquivo em diferentes diretórios
   const possiblePaths = [
-    path.join(__dirname, 'uploads', filename),
-    path.join(__dirname, 'decrypted', filename)
+    path.join(decryptor.uploadDir, filename),
+    path.join(decryptor.decryptedDir, filename)
   ];
   
   let filepath = null;
@@ -149,8 +149,8 @@ app.get('/download/:filename', (req, res) => {
 // Rota para listar arquivos processados
 app.get('/files', (req, res) => {
   try {
-    const uploadsDir = path.join(__dirname, 'uploads');
-    const decryptedDir = path.join(__dirname, 'decrypted');
+    const uploadsDir = decryptor.uploadDir;
+    const decryptedDir = decryptor.decryptedDir;
     
     const uploads = fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir) : [];
     const decrypted = fs.existsSync(decryptedDir) ? fs.readdirSync(decryptedDir) : [];
@@ -181,12 +181,15 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Iniciar o servidor
-app.listen(PORT, () => {
-  console.log(`\n🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`✅ Endpoint principal: POST /decrypt-image-from-url`);
-  console.log('Aguardando requisições...');
-});
+// Iniciar o servidor localmente (não em ambiente Vercel)
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`\n🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`✅ Endpoint principal: POST /decrypt-image-from-url`);
+    console.log('Aguardando requisições...');
+  });
+}
 
 // Exportar para Vercel
-module.exports = app; 
+module.exports = app;
+module.exports.handler = (req, res) => app(req, res);
